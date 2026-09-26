@@ -7,7 +7,7 @@ import math
 
 from _common import check, finish, make_world
 
-from bereshit import GameObject, Vector3, BoxCollider, Rigidbody, HingeJoint
+from bereshit import GameObject, Vector3, BoxCollider, Rigidbody, HingeJoint, FixedJoint
 
 print("test_engine_joints")
 
@@ -112,5 +112,59 @@ for p in parts:
 added = run(world, parts)
 check("objects added at runtime move like objects built into the world", added == built,
       f"added {added}, built {built}")
+
+
+# 6. copy.deepcopy of a robot gives a robot of its own. A copied joint kept the original's other body, so a
+#    copy moved away was dragged back to the original robot; a copied FixedJoint came out as a plain Joint that
+#    holds nothing; and the C++ deep_copy, which crashed on every Python object, was the only one that remapped.
+def robot(joint):
+    base = box((0, 0, 0), (0.2, 0.2, 0.2), kinematic=True, name="base")
+    part = box((0.5, 0, 0), (0.3, 0.1, 0.1), name="part")
+    part.add_component(HingeJoint(base, Vector3(0, 0, 1)) if joint == "hinge" else FixedJoint(base))
+    return GameObject(children=[base, part], name="robot")
+
+
+def moved(obj, dz):
+    for o in obj.children:
+        o.transform.position = o.transform.position + Vector3(0, 0, dz)
+    return obj
+
+
+def settle(roots):
+    world = make_world(roots)
+    for _ in range(200):
+        world.update(True)
+
+
+def offset(root):
+    base, part = root.children
+    return vec(part.transform.position - base.transform.position)
+
+
+for joint in ("hinge", "fixed"):
+    alone = robot(joint)
+    settle([alone])
+    original = robot(joint)
+    clone = moved(copy.deepcopy(original), 5.0)
+    settle([original, clone])
+    check(f"a copied {joint} joint holds the copy's own body",
+          offset(clone) == offset(alone), f"copy's part at {offset(clone)} from its base, {offset(alone)} alone")
+    check(f"the original {joint} robot isn't disturbed by its copy",
+          offset(original) == offset(alone), f"part at {offset(original)} from its base, {offset(alone)} alone")
+
+# a joint to a body outside the copied objects stays on that body
+alone = robot("hinge")
+settle([alone])
+base = box((0, 0, 0), (0.2, 0.2, 0.2), kinematic=True, name="base")
+part = box((0.5, 0, 0), (0.3, 0.1, 0.1), name="part")
+part.add_component(HingeJoint(base, Vector3(0, 0, 1)))
+part_copy = copy.deepcopy(part)
+_KEEP.append(part)
+settle([base, part_copy])   # the original part stays out of the world
+check("a copied part whose joint's body isn't copied stays on that body",
+      vec(part_copy.transform.position - base.transform.position) == offset(alone),
+      f"{vec(part_copy.transform.position - base.transform.position)} from the base, {offset(alone)} alone")
+
+check("GameObject has no deep_copy (it crashed on every Python object)", not hasattr(GameObject, "deep_copy"))
 
 finish()
