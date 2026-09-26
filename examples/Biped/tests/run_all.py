@@ -28,7 +28,10 @@ RUNS = [
     ("test_symmetry.py", {}),
     ("test_motors.py", {}),
     ("test_one_leg_strength.py", {}),
+    ("test_one_leg_strength.py", {"BIPED_BUILD": "v2"}),
     ("test_one_leg_strength.py", {"BIPED_BUILD": "current"}),
+    ("test_one_leg_strength.py", {"BIPED_BUILD": "hybrid"}),
+    ("test_geometry_config.py", {"BIPED_BUILD": "hybrid"}),
     ("test_symmetry.py", {"BIPED_HIP_YAW": "0"}),
 ]
 

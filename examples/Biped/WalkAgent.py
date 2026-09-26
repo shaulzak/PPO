@@ -18,7 +18,7 @@ from bereshit.addons.PPO import Agent, Config
 import robot as R
 import motions as M
 from curriculum import Curriculum, STAGES
-from servos import SERVO
+from servos import SERVO, servo_for, servos_label
 from walk_metrics import WalkStats, support_margin, capture_point
 
 # Shared by Train.py, Run.py, Evaluate.py (and later the robot's controller): must match exactly.
@@ -116,7 +116,7 @@ def check_model_servo(path):
 
 
 def model_metadata():
-    return {"servo": SERVO.name, "obs_dim": OBS_DIM, "hip_yaw": R.HIP_YAW, "leg_channel": R.LEG_CHANNEL,
+    return {"servo": servos_label(), "obs_dim": OBS_DIM, "hip_yaw": R.HIP_YAW, "leg_channel": R.LEG_CHANNEL,
             "battery": R.BATTERY}
 
 
@@ -257,7 +257,10 @@ class WalkAgent(Agent):
         self.total_mass = float(self.masses.sum())
         self.nominal_height = R.axis_heights()["pelvis"]
         self.limits = [(s.low, s.high) for s in self.servos]
-        self.rated_share = SERVO.rated_torque / SERVO.stall_torque
+        specs = [servo_for(j) for _ in range(2) for j in R.JOINT_ORDER]
+        self.rated_share = np.array([s.rated_torque / s.stall_torque for s in specs])
+        self.idle_current = np.array([s.idle_current for s in specs])
+        self.stall_current = np.array([s.stall_current for s in specs])
         self.previous_action = np.zeros(ACTION_DIM, dtype=np.float32)
         self.action_before_previous = np.zeros(ACTION_DIM, dtype=np.float32)
         self.stage = STAGES[0]
@@ -614,7 +617,7 @@ class WalkAgent(Agent):
                for j in R.JOINT_ORDER},
             "torque_peak": float(torque_use.max()), "over_rated": float(np.mean(torque_use > self.rated_share)),
             "at_limit": at_limit,
-            "current": float(np.sum(SERVO.idle_current + SERVO.stall_current * torque_use)),
+            "current": float(np.sum(self.idle_current + self.stall_current * torque_use)),
             **{f"motor_{kind}_{side}_{j}": float(values[R.servo_index(j, i)])
                for kind, values in (("torque", torque_use), ("error", tracking_error), ("moves", movement))
                for i, side in enumerate("LR") for j in R.JOINT_ORDER},

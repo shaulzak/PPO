@@ -18,9 +18,9 @@ from bereshit import Vector3
 import robot as R
 import motions as M
 import WalkAgent as W
-from servos import SERVO
+from servos import servo_for, servos_label
 
-print(f"test_one_leg_strength ({SERVO.name}, {R.NUM_SERVOS} servos, channel {R.LEG_CHANNEL}, "
+print(f"test_one_leg_strength ({servos_label()}, {R.NUM_SERVOS} servos, channel {R.LEG_CHANNEL}, "
       f"battery {'yes' if R.BATTERY else 'no'})")
 
 STANCE = 1                                     # the right foot stands, the left one is lifted
@@ -111,10 +111,12 @@ check("balanced one-leg pose found (center of mass within 2 mm of the standing a
 need = hang.gravity_torques()
 print(f"  holding still on the right foot (robot {sum(b.Rigidbody.mass for b in hang.bodies):.2f} kg):")
 for joint, tau in need.items():
-    print(f"    {joint:<11} {tau:4.2f} N*m = {tau / SERVO.stall_torque:4.0%} of stall ({SERVO.stall_torque:.2f}), "
-          f"{tau / SERVO.rated_torque:5.0%} of rated ({SERVO.rated_torque:.2f})")
-worst = max(need, key=need.get)
-strong_enough = need[worst] < SERVO.stall_torque
+    spec = servo_for(joint)
+    print(f"    {joint:<11} {tau:4.2f} N*m = {tau / spec.stall_torque:4.0%} of stall ({spec.stall_torque:.2f}), "
+          f"{tau / spec.rated_torque:5.0%} of rated ({spec.rated_torque:.2f}, {spec.name})")
+worst = max(need, key=lambda j: need[j] / servo_for(j).stall_torque)
+worst_spec = servo_for(worst)
+strong_enough = need[worst] < worst_spec.stall_torque
 
 # 2. simulation: lean, lift, hold, with the standing foot glued down
 stand = Scene(gravity=(0, -9.8, 0), glue_foot=True)
@@ -144,7 +146,7 @@ if strong_enough:
 else:
     check("statics says too weak, and the simulated joints give way (> 6 deg or the foot comes down)", not held)
 
-print(f"  VERDICT {SERVO.name}: standing on one leg needs {need[worst]:.2f} N*m at {worst} = "
-      f"{need[worst] / SERVO.stall_torque:.0%} of stall, {need[worst] / SERVO.rated_torque:.0%} of rated -> "
+print(f"  VERDICT {servos_label()}: the hardest joint is {worst} ({worst_spec.name}), {need[worst]:.2f} N*m = "
+      f"{need[worst] / worst_spec.stall_torque:.0%} of stall, {need[worst] / worst_spec.rated_torque:.0%} of rated -> "
       + ("CAN hold one leg (by strength)" if strong_enough else "CANNOT stand on one leg (too weak, whatever the policy)"))
 finish()

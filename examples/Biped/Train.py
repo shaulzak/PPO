@@ -26,7 +26,7 @@ import robot as R
 from curriculum import Curriculum
 from WalkAgent import (WalkAgent, make_config, check_model_servo, mirror_observation, mirror_action,
                        TICK, CONTROL_DT, PHYSICS_EPOCHS)
-from servos import SERVO
+from servos import SERVO, servos_label
 
 MODEL_PATH = os.path.join(HERE, "model.pt")
 CURRICULUM_STATE = os.path.join(HERE, "curriculum_state.json")
@@ -36,7 +36,7 @@ parser.add_argument("--resume", action="store_true", help="continue training fro
 parser.add_argument("--seconds", type=float, default=None, help="stop after this many wall-clock seconds")
 args = parser.parse_args()
 
-print(f"Servo: {SERVO.name} ({SERVO.stall_torque:.2f} N*m, {SERVO.max_speed:.0f} deg/s, "
+print(f"Servo: {servos_label()} ({SERVO.stall_torque:.2f} N*m, {SERVO.max_speed:.0f} deg/s, "
       f"position feedback: {'yes' if SERVO.position_feedback else 'no'}) | {R.NUM_SERVOS} servos, "
       f"hip yaw: {'yes' if R.HIP_YAW else 'no'}, leg channel {R.LEG_CHANNEL}, battery: {'yes' if R.BATTERY else 'no'}",
       flush=True)

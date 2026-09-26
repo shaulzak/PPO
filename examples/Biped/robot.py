@@ -13,9 +13,9 @@ from bereshit import GameObject, Vector3, BoxCollider, Rigidbody, HingeJoint, Co
 
 import os
 
-from servos import SERVO, SERVO_MODEL, build_setting
+from servos import SERVO, SERVO_MODEL, build_setting, servo_for
 
-# --- build configuration (version 2 of SHOPPING_LIST.md by default, BIPED_BUILD in servos.py) ---
+# --- build configuration (BIPED_BUILD in servos.py; by default SHOPPING_LIST.md's recommendation) ---
 # Hip yaw: a 6th servo per leg turning the leg about the vertical axis, between the pelvis and the hip.
 HIP_YAW = build_setting("BIPED_HIP_YAW") == "1"
 HIP_YAW_STACK = 0.045         # m the yaw servo adds between the hip pitch axis and the pelvis (estimate: re-measure)
@@ -49,13 +49,19 @@ SERVO_MAX_SPEED = SERVO.max_speed
 
 # --- masses (version 2 build: ~2.4 kg). Each rigid segment is one body. ---
 SERVO_MASS = SERVO.mass + 0.03   # + brackets and horn
+
+
+def servo_mass(joint):
+    return servo_for(joint).mass + 0.03   # + brackets and horn
+
+
 FOOT_MASS = 0.10              # 1 mm plate (81 g) + rubber sole and FSRs
 LEG_WIRING_MASS = 0.025       # per channel: cables, sensor wiring
-ANKLE_BLOCK_MASS = 2 * SERVO_MASS
-SHIN_MASS = CHANNEL_MASSES[LEG_CHANNEL] + LEG_WIRING_MASS + SERVO_MASS   # + the knee servo
+ANKLE_BLOCK_MASS = servo_mass("ankle_pitch") + servo_mass("ankle_roll")
+SHIN_MASS = CHANNEL_MASSES[LEG_CHANNEL] + LEG_WIRING_MASS + servo_mass("knee_flex")   # + the knee servo
 THIGH_MASS = CHANNEL_MASSES[LEG_CHANNEL] + LEG_WIRING_MASS
-HIP_BLOCK_MASS = 2 * SERVO_MASS
-YAW_BLOCK_MASS = SERVO_MASS
+HIP_BLOCK_MASS = servo_mass("hip_flex") + servo_mass("hip_roll")
+YAW_BLOCK_MASS = servo_mass("hip_yaw")
 # 1120-0012-0312 (206 g) + ESP32, bus adapter, IMU, switch, fuse, wiring (~150 g), + the LiPo mounted in
 # the middle of the pelvis: there it sits 12 cm from a standing hip instead of 24 cm on the other leg,
 # and it isn't swung with every step.
@@ -68,6 +74,9 @@ PELVIS_MASS = 0.206 + 0.15 + BATTERY_MASS
 # which are otherwise so light (~3e-5 kg*m^2) that the joint solver can't pass the servo torque through
 # them to the rest of the leg.
 SERVO_ARMATURE = SERVO.armature
+# per block: the servos it holds (a block with a heavier servo gets that one's armature)
+BLOCK_SERVOS = {"yaw_block": ("hip_yaw",), "hip_block": ("hip_flex", "hip_roll"),
+                "ankle_block": ("ankle_pitch", "ankle_roll")}
 
 # (low, high) in degrees, in human terms. The FLEX_SIGNs map "flexion is positive" to the measured
 # angle; found by commanding each joint in a hanging robot (knee: shin swings back; hip: foot forward).
@@ -185,6 +194,11 @@ class HobbyServo(Component):
         self.joint.motor_speed = HobbyServo.MOTOR_SIGN * math.radians(speed_deg)
 
 
+def _spec(joint):
+    """HobbyServo arguments of the servo model at a joint."""
+    return {"max_torque": servo_for(joint).stall_torque, "max_speed": servo_for(joint).max_speed}
+
+
 def _body(position, size, mass, name, *components, friction=0.6, restitution=0.0):
     return GameObject(position=position, size=size, name=name).add_component(
         BoxCollider(), Rigidbody(mass=mass, friction_coefficient=friction, restitution=restitution), *components)
@@ -225,31 +239,37 @@ def build_leg(side, pelvis, lift=0.002):
     servos = {}
     above = pelvis
     if HIP_YAW:
-        servos["hip_yaw"] = HobbyServo(pelvis, YAW_AXIS, anchor("hip_yaw"), JOINT_LIMITS["hip_yaw"], sign=side)
+        servos["hip_yaw"] = HobbyServo(pelvis, YAW_AXIS, anchor("hip_yaw"), JOINT_LIMITS["hip_yaw"], sign=side,
+                                       **_spec("hip_yaw"))
         yaw_block = _body(Vector3(0, (h["hip_pitch"] + h["pelvis_bottom"]) / 2 + 0.005, z), block, YAW_BLOCK_MASS,
                           "yaw_block", servos["hip_yaw"])
         blocks.append(yaw_block)
         above = yaw_block
-    hip_flex = HobbyServo(above, PITCH_AXIS, anchor("hip_pitch"), JOINT_LIMITS["hip_flex"], sign=HIP_FLEX_SIGN)
+    hip_flex = HobbyServo(above, PITCH_AXIS, anchor("hip_pitch"), JOINT_LIMITS["hip_flex"], sign=HIP_FLEX_SIGN,
+                          **_spec("hip_flex"))
     hip_block = _body(Vector3(0, (h["hip_roll"] + h["hip_pitch"]) / 2, z), block, HIP_BLOCK_MASS, "hip_block",
                       hip_flex)
-    hip_roll = HobbyServo(hip_block, ROLL_AXIS, anchor("hip_roll"), JOINT_LIMITS["hip_roll"], sign=side)
+    hip_roll = HobbyServo(hip_block, ROLL_AXIS, anchor("hip_roll"), JOINT_LIMITS["hip_roll"], sign=side, **_spec("hip_roll"))
     position, size = channel_between("knee", "hip_roll")
     thigh = _body(position, size, THIGH_MASS, "thigh", hip_roll)
-    knee = HobbyServo(thigh, PITCH_AXIS, anchor("knee"), JOINT_LIMITS["knee_flex"], sign=KNEE_FLEX_SIGN)
+    knee = HobbyServo(thigh, PITCH_AXIS, anchor("knee"), JOINT_LIMITS["knee_flex"], sign=KNEE_FLEX_SIGN,
+                      **_spec("knee_flex"))
     position, size = channel_between("ankle_roll", "knee")
     shin = _body(position, size, SHIN_MASS, "shin", knee)
-    ankle_roll = HobbyServo(shin, ROLL_AXIS, anchor("ankle_roll"), JOINT_LIMITS["ankle_roll"], sign=side)
+    ankle_roll = HobbyServo(shin, ROLL_AXIS, anchor("ankle_roll"), JOINT_LIMITS["ankle_roll"], sign=side,
+                            **_spec("ankle_roll"))
     ankle_block = _body(Vector3(0, (h["ankle_pitch"] + h["ankle_roll"]) / 2, z), block, ANKLE_BLOCK_MASS,
                         "ankle_block", ankle_roll)
-    ankle_pitch = HobbyServo(ankle_block, PITCH_AXIS, anchor("ankle_pitch"), JOINT_LIMITS["ankle_pitch"])
+    ankle_pitch = HobbyServo(ankle_block, PITCH_AXIS, anchor("ankle_pitch"), JOINT_LIMITS["ankle_pitch"],
+                             **_spec("ankle_pitch"))
     foot = _body(Vector3(FOOT_LENGTH / 2 - ANKLE_FROM_HEEL, lift + FOOT_THICKNESS / 2, z),
                  Vector3(FOOT_LENGTH, FOOT_THICKNESS, FOOT_WIDTH), FOOT_MASS, "foot", ankle_pitch)
 
     blocks += [hip_block, ankle_block]
-    for blk in blocks:
+    for blk, name in zip(blocks, (["yaw_block"] if HIP_YAW else []) + ["hip_block", "ankle_block"]):
+        armature = max(servo_for(j).armature for j in BLOCK_SERVOS[name])
         i = blk.Rigidbody.inertia
-        blk.Rigidbody.inertia = Vector3(i.x + SERVO_ARMATURE, i.y + SERVO_ARMATURE, i.z + SERVO_ARMATURE)
+        blk.Rigidbody.inertia = Vector3(i.x + armature, i.y + armature, i.z + armature)
 
     parts = {"hip_block": hip_block, "thigh": thigh, "shin": shin, "ankle_block": ankle_block, "foot": foot}
     if HIP_YAW:
