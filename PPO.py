@@ -34,6 +34,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
+import os
 from typing import Deque, Dict, List, Optional, Tuple, Union
 from collections import deque
 from numbers import Real
@@ -53,6 +54,11 @@ from torch.distributions import (
 
 
 from bereshit import Vector3, Quaternion, Component
+
+# Range of the continuous actions' log std. The parameter itself is kept inside it (see Trainer._cap_noise):
+# clamping it in forward() instead cut its gradient off, so a log_std past a bound stayed there for good.
+LOG_STD_MIN = math.log(1e-4)
+LOG_STD_MAX = math.log(2.0)
 
 @dataclass
 class Config:
@@ -131,6 +137,14 @@ class Config:
             raise ValueError("observation_clip must be > 0")
         if self.target_kl is not None and self.target_kl <= 0:
             raise ValueError("target_kl must be > 0 when specified")
+        if self.max_noise_std is not None and self.max_noise_std <= 0:
+            raise ValueError("max_noise_std must be > 0 when specified")
+
+
+def latest_model_path(best_model_path: str) -> str:
+    """Where the newest checkpoint is saved, next to the best one: model.pt -> modellatest.pt."""
+    root, extension = os.path.splitext(best_model_path)
+    return root + "latest" + extension
 
 
 class RunningMeanStd:
@@ -203,7 +217,8 @@ class ActorCritic(nn.Module):
 
         if action_dim_continuous > 0:
             self.actor_mean = nn.Linear(hidden_size, action_dim_continuous)
-            self.log_std = nn.Parameter(torch.full((action_dim_continuous,), float(initial_log_std)))
+            initial_log_std = min(max(float(initial_log_std), LOG_STD_MIN), LOG_STD_MAX)
+            self.log_std = nn.Parameter(torch.full((action_dim_continuous,), initial_log_std))
             if zero_initial_actions:
                 nn.init.zeros_(self.actor_mean.weight)
                 nn.init.zeros_(self.actor_mean.bias)
@@ -224,11 +239,8 @@ class ActorCritic(nn.Module):
 
         if self.action_dim_continuous > 0:
             mean = self.actor_mean(x)
-            # Keep the standard deviation finite even if an unstable update
-            # temporarily pushes log_std to an extreme value.
-            std = torch.exp(
-                self.log_std.clamp(math.log(1e-4), math.log(2.0))
-            ).expand_as(mean)
+            # log_std stays in [LOG_STD_MIN, LOG_STD_MAX]: the trainer clamps the parameter after every step.
+            std = torch.exp(self.log_std).expand_as(mean)
             if noise_scale is not None:
                 std = std * noise_scale.reshape(-1, 1)
             out["continuous_mean"] = mean
@@ -382,12 +394,18 @@ class Trainer:
             raise FloatingPointError(f"{name} contains NaN or infinite values")
 
     def _cap_noise(self) -> None:
-        """Keep the exploration noise at or below config.max_noise_std."""
-        if self.config.max_noise_std is not None and self.model.log_std is not None:
-            with torch.no_grad():
-                self.model.log_std.clamp_(max=math.log(self.config.max_noise_std))
+        """Keep log_std in [LOG_STD_MIN, LOG_STD_MAX] and the exploration noise at or below config.max_noise_std."""
+        if self.model.log_std is None:
+            return
+        high = LOG_STD_MAX
+        if self.config.max_noise_std is not None:
+            high = min(high, math.log(self.config.max_noise_std))
+        with torch.no_grad():
+            self.model.log_std.clamp_(min=min(LOG_STD_MIN, high), max=high)
 
     def set_max_noise_std(self, value: Optional[float]) -> None:
+        if value is not None and value <= 0:
+            raise ValueError("max_noise_std must be > 0 when specified")
         self.config.max_noise_std = value
         self._cap_noise()
 
@@ -854,7 +872,7 @@ class Trainer:
                 self.save(self.config.best_model_path)
 
         if self.training_updates % 10 == 0 and self.config.best_model_path is not None:
-            self.save(self.config.best_model_path[:-3] + "latest" + ".pt")
+            self.save(latest_model_path(self.config.best_model_path))
         self.training_updates += 1
 
         return {
@@ -898,6 +916,7 @@ class Trainer:
         checkpoint = torch.load(path, map_location=self.device)
         grown = self._grow_observations(checkpoint)
         self.model.load_state_dict(checkpoint["model"])
+        self._cap_noise()   # a checkpoint from before log_std was kept in range
 
         if "obs_rms" in checkpoint:
             self.obs_rms.load_state_dict(checkpoint["obs_rms"])
@@ -1265,6 +1284,8 @@ class Agent(Component):
 
     def set_reward(self, reward: float) -> None:
         """Set this step's reward value, replacing any pending reward for the current step."""
+        if not self.has_active_action:
+            return   # nothing to credit yet, as in add_reward
         old_pending = self.pending_reward
         base_total = self.episode_reward - old_pending
         new_pending = float(reward)

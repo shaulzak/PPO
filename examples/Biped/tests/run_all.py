@@ -11,6 +11,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 RUNS = [
     ("test_engine_physics.py", {}),
     ("test_engine_contacts.py", {}),
+    ("test_engine_joints.py", {}),
     ("test_parallel_worker.py", {}),
     ("test_fall_report.py", {}),
     ("test_geometry_config.py", {}),
@@ -19,6 +20,7 @@ RUNS = [
     ("test_robot.py", {}),
     ("test_robot.py", {"BIPED_HIP_YAW": "0"}),
     ("test_ppo.py", {}),
+    ("test_ppo_edges.py", {}),
     ("test_curriculum.py", {}),
     ("test_reward.py", {}),
     ("test_walk_stats.py", {}),
