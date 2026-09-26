@@ -1,13 +1,17 @@
 """
-The C++ engine's hinge motor, hinge axis, custom inertia, copies and objects added at runtime.
+The C++ engine's hinge motor, hinge axis, custom inertia, copies, objects added at runtime and joints to bodies
+without a collider.
     python tests/test_engine_joints.py
 """
 import copy
 import math
+import subprocess
+import sys
 
 from _common import check, finish, make_world
 
 from bereshit import GameObject, Vector3, BoxCollider, Rigidbody, HingeJoint, FixedJoint
+from bereshit.MeshRander import MeshRander
 
 print("test_engine_joints")
 
@@ -166,5 +170,38 @@ check("a copied part whose joint's body isn't copied stays on that body",
       f"{vec(part_copy.transform.position - base.transform.position)} from the base, {offset(alone)} alone")
 
 check("GameObject has no deep_copy (it crashed on every Python object)", not hasattr(GameObject, "deep_copy"))
+
+# 7. a copy keeps its mesh: the copy's attach() found the mesh already built and asked for triangles, which only
+#    the box has, so copying anything with another shape raised ValueError
+for shape in ("box", "ellipsoid", "cone", "cylinder", "pyramid", "triangular_prism"):
+    obj = GameObject().add_component(MeshRander(shape=shape))
+    try:
+        mesh = copy.deepcopy(obj).MeshRander
+        got, error = (mesh._shape, len(mesh.vertices())), None
+    except Exception as e:
+        got, error = None, e
+    _KEEP.append(obj)
+    check(f"a copy keeps its {shape} mesh", got == (shape, len(obj.MeshRander.vertices())),
+          f"error {error!r}" if error else f"copy {got}, original {(shape, len(obj.MeshRander.vertices()))}")
+
+# 8. a joint to a body without a collider anchors at that body. Its anchor ray searched every collider in the
+#    world instead, and crashed when no world existed yet. Run apart: the crash killed the process.
+SCENE = """
+from bereshit import GameObject, Vector3, BoxCollider, Rigidbody, HingeJoint, World
+base = GameObject(size=Vector3(0.2, 0.2, 0.2)).add_component(Rigidbody(isKinematic=True))   # no collider
+arm = GameObject(position=Vector3(0.5, 0, 0), size=Vector3(0.3, 0.1, 0.1)).add_component(BoxCollider(), Rigidbody())
+arm.add_component(HingeJoint(base, Vector3(0, 0, 1)))
+decoy = GameObject(position=Vector3(0.25, 3, 0)).add_component(BoxCollider(), Rigidbody(isKinematic=True))
+world = World(False, [base, arm, decoy], GameObject(), Vector3(0, -9.8, 0), 1 / 200, 1, 30)
+world.Start()
+for _ in range(200):
+    world.update(True)
+print("distance", round((arm.transform.position - base.transform.position).magnitude(), 3))
+"""
+proc = subprocess.run([sys.executable, "-c", SCENE], capture_output=True, text=True)
+line = [l for l in proc.stdout.splitlines() if l.startswith("distance")]
+check("a hinge to a body without a collider turns about that body, before any world exists",
+      proc.returncode == 0 and line == ["distance 0.5"],
+      f"exit code {proc.returncode}, {line[0] if line else 'no result'}")
 
 finish()
