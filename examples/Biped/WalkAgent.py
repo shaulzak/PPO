@@ -757,7 +757,9 @@ class WalkAgent(Agent):
             servo.command(ref + min(max(float(a), -1.0), 1.0) * RESIDUAL_SPAN_DEG)
 
     def Update(self, dt):
-        if self.process_end_request():
+        # Not process_end_request(): it ends the episode itself, so _finish would report the next, empty one.
+        if self._end_requested:
+            self._end_requested = False
             self.falls += 1
             self.stats.count("fall_touch")
             self._count_fall_phase()

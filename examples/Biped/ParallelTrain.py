@@ -60,9 +60,10 @@ def worker(index, steps_per_rollout, conn):
     act = trainer.act
     record = trainer.record_episode_result
 
-    def act_and_keep(observation, deterministic=False):
-        raw_observations.append(np.asarray(observation, dtype=np.float32))
-        return act(observation, deterministic)
+    def act_and_keep(observation, deterministic=False, noise_scale=1.0):
+        if not trainer.inference_only:            # like Trainer.act: test episodes don't move the statistics
+            raw_observations.append(np.asarray(observation, dtype=np.float32))
+        return act(observation, deterministic, noise_scale)
 
     def record_and_keep(reward, length):
         finished_episodes.append((reward, length))

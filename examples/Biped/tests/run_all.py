@@ -10,6 +10,9 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 RUNS = [
     ("test_engine_physics.py", {}),
+    ("test_engine_contacts.py", {}),
+    ("test_parallel_worker.py", {}),
+    ("test_fall_report.py", {}),
     ("test_geometry_config.py", {}),
     ("test_geometry_config.py", {"BIPED_BUILD": "current"}),
     ("test_geometry_config.py", {"BIPED_SERVO": "STS3095_12V"}),
