@@ -66,6 +66,8 @@ class MoveToGoal(Agent):
             self.min_distance = distance
 
     def Update(self, dt):
+        if self.process_end_request():
+            return
         self.add_observations()
         actions = self.get_continuous_actions()
         self.move(actions, dt)

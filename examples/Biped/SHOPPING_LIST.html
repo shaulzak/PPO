@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Shopping list – biped robot, version 2</title>
+<style>
+body{font-family:Segoe UI,Arial,sans-serif;max-width:1100px;margin:32px auto;padding:0 20px;color:#222;line-height:1.5}
+h1{border-bottom:3px solid #2a6ebb;padding-bottom:6px}
+h2{color:#2a6ebb;border-bottom:1px solid #ddd;padding-bottom:4px;margin-top:36px}
+h3{color:#444}
+.table{overflow-x:auto}
+table{border-collapse:collapse;width:100%;margin:12px 0;font-size:14px}
+th,td{border:1px solid #ccc;padding:6px 9px;text-align:left;vertical-align:top}
+th{background:#eef3fa}
+tr:nth-child(even) td{background:#fafafa}
+code{background:#f1f1f1;padding:1px 4px;border-radius:3px;font-size:90%}
+a{color:#2a6ebb}
+.ok{color:#1a8a2a;font-weight:bold}
+@media print{body{margin:0;max-width:none}a{color:#222}h2{page-break-after:avoid}tr{page-break-inside:avoid}}
+</style>
+</head>
+<body>
+<h1>Shopping list – biped robot, version 2</h1>
+<p>Goal of this version: a robot that walks like a person without falling, running the same model that is trained in simulation (<code>addons/PPO/examples/Biped</code>). The list builds on the existing structure (goBILDA channels, aluminum feet, pelvis with 24.4 cm between hip centers).</p>
+<h2>What changes compared to today's robot</h2>
+<div class="table"><table><thead><tr><th></th><th>Today</th><th>Version 2</th><th>Why</th></tr></thead><tbody>
+<tr><td>Servos</td><td>10 × RDS3115MG</td><td><strong>10 × STS3250 + 2 × STS3095 (hip roll)</strong> (+1 spare of each)</td><td>RDS3115 is too weak to stand on one leg (1.47 vs ~3 N·m needed); Feetech STS servos report angle, load, current and temperature</td></tr>
+<tr><td>Joints per leg</td><td>5</td><td><strong>6</strong> – hip yaw added</td><td>Without hip yaw the robot cannot correct its heading or turn; today it spins uncontrolled</td></tr>
+<tr><td>Thigh and shin</td><td>1120 U-Channel, 128 g</td><td><strong>1121 Low-Side U-Channel, 66 g</strong></td><td>Saves ~250 g in the legs; same hole pattern</td></tr>
+<tr><td>Controller</td><td>Arduino Nano</td><td><strong>Arduino Nano ESP32</strong></td><td>The model (~24k weights) does not fit in the Nano's 2 KB of RAM</td></tr>
+<tr><td>Servo drivers</td><td>4 × PCA9685</td><td><strong>One bus servo adapter</strong></td><td>STS servos are daisy-chained on one serial line</td></tr>
+<tr><td>Sensors</td><td>none</td><td><strong>IMU + 8 pressure sensors</strong></td><td>The model needs body tilt and foot contact</td></tr>
+<tr><td>Power</td><td>bench supply / converter</td><td><strong>3S 3000 mAh battery</strong></td><td>Untethered walking; 12.6 V matches the 12 V STS servos</td></tr>
+</tbody></table></div>
+<h2>1. Servos and mechanics</h2>
+<div class="table"><table><thead><tr><th>#</th><th>Item</th><th>Qty</th><th>Checked specs</th><th>Notes</th></tr></thead><tbody>
+<tr><td>1</td><td><strong>Feetech STS3250</strong> (12 V version; C001 with bracket or C002 without)</td><td>11</td><td>50 kg·cm stall, 12.5 kg·cm rated, 0.133 s/60°, 9–12.6 V, 74.5 g, 45.2×24.7×35 mm, 12-bit encoder, feedback of angle/load/current/temperature</td><td>10 + 1 spare</td></tr>
+<tr><td>2</td><td><strong>Feetech STS3095</strong> (12 V)</td><td>3</td><td>95 kg·cm stall, ~22.5 kg·cm rated, ~0.32 s/60°, 12 V, 194.5 g, 30×65×48 mm, same serial protocol</td><td>The 2 hip-roll joints + 1 spare. See "Why a hybrid" below</td></tr>
+<tr><td>3</td><td>Aluminum U brackets for the STS3215/STS3250 size (long + short)</td><td>11 sets</td><td>Must fit 45.2×24.7×35 mm</td><td><strong>Check the fit before buying in quantity</strong> – order one set first</td></tr>
+<tr><td>4</td><td>Brackets for the STS3095</td><td>3 sets</td><td>Must fit 30×65×48 mm</td><td>A different frame size: STS3250 brackets do not fit</td></tr>
+<tr><td>5</td><td><strong>goBILDA 1121-0007-0192</strong> Low-Side U-Channel, 192 mm</td><td>4</td><td>66 g, aluminum, same hole pattern as 1120</td><td>Thighs and shins</td></tr>
+<tr><td>6</td><td><strong>goBILDA 1123-series pattern plate, 1×1 hole, 43×48 mm</strong></td><td>8 (+2)</td><td>Fits flush inside the 1121 channel</td><td>Servo mounting at the channel ends – see section 6</td></tr>
+<tr><td>7</td><td>goBILDA 1120-0012-0312 (existing pelvis)</td><td>0</td><td>–</td><td><strong>Keep</strong>. Stiffness matters more than weight in the pelvis, and it holds the battery and controller</td></tr>
+<tr><td>8</td><td>Ball bearing for the hip yaw joint (e.g. 608ZZ, 8 mm bore) + matching shaft/hub</td><td>2 (+2)</td><td>–</td><td><strong>Important</strong>: the bearing carries the leg's weight and bending load so the servo shaft doesn't carry them alone. Design the joint before buying</td></tr>
+<tr><td>9</td><td>M4 screws (goBILDA standard) and M3 (servo brackets), lock nuts</td><td>kit</td><td>–</td><td>Some bracket holes may need drilling</td></tr>
+<tr><td>10</td><td>Thin rubber for the soles, 1–2 mm</td><td>2 × 25×12 cm</td><td>–</td><td>Bare aluminum slips on the floor</td></tr>
+</tbody></table></div>
+<h3>Why a hybrid (STS3095 only at the hip roll)</h3>
+<p>The hardest load is standing on one leg: the hip-roll servo of the standing leg holds the whole body sideways.</p>
+<div class="table"><table><thead><tr><th>Option</th><th>Robot mass</th><th>Hip-roll torque needed</th><th>Servo rated / stall</th><th>Verdict</th></tr></thead><tbody>
+<tr><td>12 × STS3250</td><td>~2.41 kg</td><td>~2.9 N·m</td><td>1.23 / 4.90 N·m → 2.4× over rated, 59% of stall</td><td>Works for walking and short one-leg stands; long stands heat the hip</td></tr>
+<tr><td><strong>10 × STS3250 + 2 × STS3095</strong></td><td>~2.65 kg</td><td>~3.2 N·m</td><td>2.2 / 9.3 N·m → 1.45× over rated, 34% of stall</td><td><strong>Recommended</strong>: large margin where it matters, little extra mass</td></tr>
+<tr><td>12 × STS3095</td><td>~3.9 kg</td><td>~4.6 N·m</td><td>2.2 / 9.3 N·m → 2.1× over rated</td><td>Not recommended: the extra 1.4 kg eats most of the extra torque, and the servo is 2.4× slower (186 vs 451 °/s), too slow to catch a fall at the knee and ankle</td></tr>
+</tbody></table></div>
+<p>The STS3095 is slow, but the hip roll moves little and slowly, so its speed is not a problem there.</p>
+<h2>2. Controller and communication</h2>
+<div class="table"><table><thead><tr><th>#</th><th>Item</th><th>Qty</th><th>Checked specs</th><th>Notes</th></tr></thead><tbody>
+<tr><td>11</td><td><strong>Arduino Nano ESP32</strong></td><td>1 (+1)</td><td>VIN 6–21 V per the datasheet; 3.3 V logic; 8 analog inputs</td><td>Powered directly from the battery (12.6 V full) through VIN</td></tr>
+<tr><td>12</td><td><strong>Waveshare Bus Servo Adapter (A)</strong></td><td>1</td><td>Supports ST/SC (including STS); input 9–12.6 V; jumper A = UART control</td><td>Connects the ESP32 UART to the servo bus</td></tr>
+</tbody></table></div>
+<h2>3. Sensors</h2>
+<div class="table"><table><thead><tr><th>#</th><th>Item</th><th>Qty</th><th>Notes</th></tr></thead><tbody>
+<tr><td>13</td><td><strong>Adafruit BNO085</strong> (IMU)</td><td>1</td><td>Center of the pelvis; I2C; outputs a fused orientation</td></tr>
+<tr><td>14</td><td>STEMMA QT / Qwiic cable</td><td>1</td><td></td></tr>
+<tr><td>15</td><td><strong>FSR 402</strong></td><td>10</td><td>4 per foot at the corners, + 2 spares</td></tr>
+<tr><td>16</td><td>10k resistors</td><td>10</td><td>Voltage divider for each FSR</td></tr>
+<tr><td>17</td><td>Perfboard</td><td>1</td><td></td></tr>
+</tbody></table></div>
+<h2>4. Power</h2>
+<div class="table"><table><thead><tr><th>#</th><th>Item</th><th>Qty</th><th>Notes</th></tr></thead><tbody>
+<tr><td>18</td><td><strong>LiPo 3S (11.1 V), 3000 mAh, 30C or more, XT60</strong></td><td>2</td><td>~240 g. <strong>Not 4S</strong>: 16.8 V trips the servos' over-voltage protection (above 16 V)</td></tr>
+<tr><td>19</td><td>LiPo balance charger</td><td>1</td><td>Required</td></tr>
+<tr><td>20</td><td>Low-voltage alarm</td><td>1</td><td></td></tr>
+<tr><td>21</td><td>Bench power supply 12 V, 30 A</td><td>1</td><td>For work without the battery</td></tr>
+<tr><td>22</td><td>Silicone wire 16 AWG (main) and 18 AWG (per leg)</td><td>2 m of each color</td><td></td></tr>
+<tr><td>23</td><td>XT60 connectors</td><td>4 pairs</td><td></td></tr>
+<tr><td>24</td><td>Main switch 30 A+ and fuse holder with a 30 A fuse</td><td>1 each</td><td>30 A (not 20 A) because of the two STS3095</td></tr>
+<tr><td>25</td><td>Extension cables for Feetech servos (5264-3P connector)</td><td>6</td><td>Check that the STS3095 uses the same connector</td></tr>
+<tr><td>26</td><td>Heat shrink, zip ties</td><td>kit</td><td></td></tr>
+</tbody></table></div>
+<p><strong>Wiring:</strong> each leg is a separate chain of 6 servos. Feed power into each chain separately, at the top of the hip, with 18 AWG wire, so the full current doesn't flow through the thin servo cables.</p>
+<h2>5. Checks: will it really work</h2>
+<p>Calculated for the recommended configuration: 1121 legs, 10 × STS3250 + 2 × STS3095, 3S 3000 mAh battery.</p>
+<p><strong>Mass:</strong> about <strong>2.65 kg</strong> (today 2.2 kg).</p>
+<p><strong>Torque:</strong> see the table in section 1. In the simulation the one-leg stand uses on average about 24% of the STS3250 stall torque at the hip roll (peak 39%), so the sim is not torque-limited; the stronger hip-roll servo is there for the real robot's heating during long one-leg stands.</p>
+<p><strong>Current and battery:</strong></p>
+<ul><li>In the simulation the servos draw about 6–10 A together on average while walking.</li><li>3000 mAh battery: about <strong>15–25 minutes</strong>.</li><li>Peak: 10 × 2.4 A + 2 × 9.8 A ≈ 44 A. A 30C battery gives 90 A <span class="ok">✓</span>. The 30 A fuse protects against a short and won't blow during normal walking.</li></ul>
+<p><strong>Voltages and logic:</strong></p>
+<ul><li>3S battery: 9.9–12.6 V, inside the STS range (9–12.6 V) <span class="ok">✓</span></li><li>Nano ESP32: VIN 6–21 V <span class="ok">✓</span></li><li>Adapter: 9–12.6 V <span class="ok">✓</span></li><li>IMU and FSR: 3.3 V from the ESP32 <span class="ok">✓</span></li><li>3.3 V UART from the ESP32 to the adapter: <strong>verify</strong> in the Waveshare documentation before connecting (the logic level is not stated explicitly)</li></ul>
+<p><strong>Compute:</strong> the model is roughly 70→128→128→12. An ESP32 runs it in under 2 ms, far below the 20 ms between decisions <span class="ok">✓</span></p>
+<h2>6. Mounting the servos to the 1121 channels</h2>
+<p>Today the servo mount is screwed to a 1123-series 1×1 hole pattern plate (43×48 mm) at the end of the 1120 channel. The same plate works with the 1121: goBILDA lists it as fitting flush inside the channel, on the same hole pattern.</p>
+<p>The difference: the 1121 sides are half as tall, so a plate held only by the side holes at the very end of the channel is less supported and can flex under the hip and knee loads. Recommended:</p>
+<ul><li>Screw the plate to the <strong>base (bottom face)</strong> of the channel, not only to the sides, with at least 4 screws.</li><li>Put the plate one hole in from the end, so there is channel material around it on all sides.</li><li>Where loads are highest (hip roll, knee), use a second plate or a goBILDA bracket on the other face so the servo is clamped from both sides.</li><li>Order one channel + two plates first and test the stiffness by hand before buying all of them.</li></ul>
+<h2>7. Feet</h2>
+<p><strong>Today (version 2 keeps them):</strong> a 1 mm aluminum plate, 250 × 120 mm (81 g), with a 1–2 mm rubber sole and 4 FSR 402 sensors at the corners. The ankle joint sits <strong>50 mm from the heel</strong>, so there are 200 mm of foot in front of it and only 50 mm behind it. The simulation uses exactly these numbers (<code>robot.py</code>: <code>FOOT_LENGTH</code>, <code>FOOT_WIDTH</code>, <code>ANKLE_FROM_HEEL</code>).</p>
+<p><strong>Why the ankle position matters:</strong> the body stands roughly above the ankle, so the distance from the ankle to the heel is how far the center of mass can move backward before the robot tips over backward. With 50 mm behind the ankle, a small push backward is enough; the policy compensates by leaning the whole body forward (the pelvis pitches forward ~9° in the current training).</p>
+<p><strong>For the next robot:</strong> put the ankle <strong>in the middle of the foot, or slightly behind it</strong> (about 110–125 mm from the heel on a 250 mm foot).</p>
+<div class="table"><table><thead><tr><th></th><th>Ankle 50 mm from the heel (today)</th><th>Ankle in the middle</th></tr></thead><tbody>
+<tr><td>Room to tip backward</td><td>50 mm</td><td>125 mm (2.5×)</td></tr>
+<tr><td>Room to tip forward</td><td>200 mm</td><td>125 mm (still plenty)</td></tr>
+<tr><td>Smallest margin (what limits stability)</td><td>50 mm</td><td>125 mm</td></tr>
+<tr><td>Upright standing</td><td>needs a forward lean</td><td>upright</td></tr>
+</tbody></table></div>
+<p>The support area of the foot doesn't change, only where the body stands on it, which makes the margins in both directions equal. A forward toe helps a human push off when walking fast, but this robot walks slowly with flat feet, so an even margin is worth more. Most small humanoid robots put the ankle near the middle of the foot.</p>
+<p><strong>Also for the next robot:</strong></p>
+<ul><li><strong>A stiffer plate:</strong> 1 mm aluminum bends under the whole robot standing on one foot, especially at the long toe. Use 2 mm (+81 g per foot), or keep 1 mm and fold a 10 mm lip along the long edges (much stiffer, almost no extra mass).</li><li><strong>The FSRs under the four corners</strong>, between the plate and the rubber, so each one measures the load at its corner.</li><li><strong>Rounded corners</strong> on the plate, so a corner doesn't catch on the floor when the foot tilts.</li></ul>
+<p>Before building, the simulation can compare the two ankle positions: changing <code>ANKLE_FROM_HEEL</code> in <code>robot.py</code> and running the push test (<code>Evaluate.py --push-test</code>) gives the push the robot survives in each direction.</p>
+<h2>8. Are the channels optimal?</h2>
+<p><strong>goBILDA's hole pattern is a real advantage</strong>: available, convenient, and compatible with all goBILDA accessories. Worth staying with it. But:</p>
+<ul><li><strong>1120 (current) is stronger and heavier than needed for thigh and shin.</strong> 128 g per segment, while the loads on a 2.5 kg robot are small.</li><li><strong>1121 Low-Side</strong> has the same hole pattern and width, with lower sides. <strong>Only 66 g</strong>, half. That saves about 250 g in the legs: less hip torque, and a lighter leg to swing on every step.</li><li><strong>In the pelvis</strong> keep the 1120: the battery and controller sit there, and torsional stiffness matters.</li><li><strong>Length:</strong> 192 mm for thigh and shin gives a near-human ratio (thigh ≈ shin) and a height of about 78 cm to the top of the pelvis with straight legs (with the hip yaw servo; ~76 cm standing with the knees slightly bent), plus whatever sits on top of the pelvis. No reason to change it. A shorter leg would lower the center of mass and the loads, but also the step length.</li><li><strong>Lighter alternative:</strong> carbon tubes. Less convenient (no hole pattern, special adapters), not worth it at this stage.</li></ul>
+<h2>9. From simulation to the real robot</h2>
+<p>A policy that is stable in the simulation will not automatically be stable on the real robot. To close the gap:</p>
+<ol><li><strong>Measure the real servos</strong> (one STS3250 and one STS3095 on the bench): response delay, speed under load, and the angle error at a given load. Update <code>servos.py</code> with the measured numbers.</li><li><strong>Measure the real robot</strong>: mass of each part and distances between the axes after assembly; update <code>robot.py</code>.</li><li><strong>Domain randomization in training</strong> (to be added before the real-robot model): random mass (±15%), friction, servo strength (±20%), control delay (0–40 ms), sensor noise on the IMU and the angles. A policy that survives all of these is much more likely to work on the real robot.</li><li><strong>First tests with a safety harness</strong> (a rope from above), starting with standing, then the weight shift, then one leg – the same order as the curriculum.</li><li><strong>Watch the servo temperature</strong> reported by the STS servos; stop if a hip servo passes 60 °C.</li></ol>
+<h2>10. What to check before the full order</h2>
+<ol><li><strong>Order one STS3250 + one STS3095 + a bracket set for each + the adapter</strong> first, and verify mechanical fit and communication with the ESP32.</li><li><strong>Design the hip yaw joint:</strong> where the servo sits (in the pelvis, shaft down) and how the bearing carries the leg. Its dimensions change the height and must be updated in the simulation.</li><li><strong>Re-measure the distances between the axes</strong> after assembly and update <code>robot.py</code>.</li></ol>
+<h2>What stays from the current robot</h2>
+<ul><li>The 1120 thigh and shin channels: not needed with the 1121, but usable for other parts.</li><li>10 RDS3115 servos and 4 PCA9685 boards: not used in version 2.</li><li>Diymore converter: useful for a bench supply (24 V → 12 V) if there is no 12 V supply.</li><li>The feet: they stay, with a rubber sole (see section 7 for the next robot).</li></ul>
+<h2>Sources</h2>
+<ul><li><a href="https://openelab.io/products/feetech-sts3250-c002-servo-12v">Feetech STS3250 – OpenELAB</a></li><li><a href="https://www.feetechrc.com/en/562636.html">Feetech STS3250 – Feetech</a></li><li><a href="https://ecksteinimg.de/Datasheet/Feetech/FT01021.pdf">Feetech 50 kg·cm TTL spec sheet (HLS3950M/STS3250)</a></li><li><a href="https://rcdrone.top/products/feetech-sts3095-servo-motor">Feetech STS3095 – RCDrone</a></li><li><a href="https://www.gobilda.com/1121-series-low-side-u-channel-7-hole-192mm-length/">goBILDA 1121-0007-0192</a></li><li><a href="https://www.gobilda.com/1121-series-low-side-u-channel">goBILDA 1121 Series</a></li><li><a href="https://www.gobilda.com/1123-series-pattern-plates/">goBILDA 1123 Series pattern plates</a></li><li><a href="https://docs.arduino.cc/resources/datasheets/ABX00083-datasheet.pdf">Arduino Nano ESP32 datasheet (ABX00083)</a></li><li><a href="https://www.waveshare.com/wiki/Bus_Servo_Adapter_(A)">Waveshare Bus Servo Adapter (A) – Wiki</a></li><li><a href="https://www.waveshare.com/bus-servo-adapter-a.htm">Waveshare Bus Servo Adapter (A)</a></li><li><a href="https://www.amazon.com/RCmall-Aluminum-Bracket-Feetech-Feedback/dp/B0GVLSJ6TG">Aluminum brackets for STS3215 – Amazon</a></li></ul>
+</body>
+</html>

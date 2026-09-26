@@ -97,6 +97,8 @@ class MoveToGoal(Agent):
         return [0,0,0]
 
     def Update(self, dt):
+        if self.process_end_request():
+            return
         self.add_observations()
         actions = self.get_continuous_actions()
         # actions = self.get_Actions()

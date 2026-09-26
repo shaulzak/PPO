@@ -53,7 +53,7 @@ config = Config(
 )
 
 Academy.setup_trainer(config)
-Academy.load_model(model="model.pt")
+Academy.load_trained_model(model="model.pt")
 
 leg = GameObject(size=Vector3(), children=[feet, mount, servo1, servo2, calf, mount2, knee, thigh, hip1, hip2]).add_component(MoveToGoal(goal))
 

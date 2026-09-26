@@ -41,9 +41,9 @@ knee = GameObject(position=Vector3(0, 8, 0), size=Vector3(.5, .5, .5), name="kne
 
 thigh = GameObject(position=Vector3(0, 10, 0), size=Vector3(.5, 3, .5)).add_component(BoxCollider(), Rigidbody(mass=0.01), FixedJoint(knee))
 
-hip1 = GameObject(position=Vector3(0, 12, 0), size=Vector3(.5, .5, .5), name="hip1").add_component(BoxCollider(), Rigidbody(mass=0.01), Servo(thigh,Vector3(0, 0, 1), max, min, speed, torque))
+hip1 = GameObject(position=Vector3(0, 12, 0), size=Vector3(.5, .5, .5), name="hip1").add_component(BoxCollider(), Rigidbody(mass=0.01), Servo(thigh,Vector3(1, 0, 0), max, min, speed, torque))  # lower hip servo: sideways (roll)
 
-hip2 = GameObject(position=Vector3(0, 13, 0), size=Vector3(.5, .5, .5), name="hip2").add_component(BoxCollider(), Rigidbody(mass=0.01), Servo(hip1,Vector3(1, 0, 0), max, min, speed, torque))
+hip2 = GameObject(position=Vector3(0, 13, 0), size=Vector3(.5, .5, .5), name="hip2").add_component(BoxCollider(), Rigidbody(mass=0.01), Servo(hip1,Vector3(0, 0, 1), max, min, speed, torque))  # upper hip servo: forward-back (pitch)
 
 leg1 = GameObject(size=Vector3(), children=[feet, mount, servo1, servo2, calf, mount2, knee, thigh, hip1, hip2])
 
@@ -64,9 +64,9 @@ knee2 = GameObject(position=Vector3(0, 8, 0), size=Vector3(.5, .5, .5), name="kn
 
 thigh2 = GameObject(position=Vector3(0, 10, 0), size=Vector3(.5, 3, .5)).add_component(BoxCollider(), Rigidbody(mass=0.01), FixedJoint(knee2))
 
-hip12 = GameObject(position=Vector3(0, 12, 0), size=Vector3(.5, .5, .5), name="hip1").add_component(BoxCollider(), Rigidbody(mass=0.01), Servo(thigh2, Vector3(0, 0, 1), max, min, speed, torque))
+hip12 = GameObject(position=Vector3(0, 12, 0), size=Vector3(.5, .5, .5), name="hip1").add_component(BoxCollider(), Rigidbody(mass=0.01), Servo(thigh2, Vector3(1, 0, 0), max, min, speed, torque))  # lower hip servo: sideways (roll)
 
-hip22 = GameObject(position=Vector3(0, 13, 0), size=Vector3(.5, .5, .5), name="hip2").add_component(BoxCollider(), Rigidbody(mass=0.01), Servo(hip12,Vector3(1, 0, 0), max, min, speed, torque))
+hip22 = GameObject(position=Vector3(0, 13, 0), size=Vector3(.5, .5, .5), name="hip2").add_component(BoxCollider(), Rigidbody(mass=0.01), Servo(hip12,Vector3(0, 0, 1), max, min, speed, torque))  # upper hip servo: forward-back (pitch)
 
 leg2 = GameObject(size=Vector3(), children=[feet2, mount_2, servo12, servo22, calf2, mount22, knee2, thigh2, hip12, hip22])
 
@@ -100,8 +100,11 @@ scene = [floor, wall1, wall2, wall3, wall4, goal, cam]
 
 legs = GameObject(size=Vector3(), children=[leg1, leg2, hip_bone])
 
-legs.add_component(MoveToGoal(goal))
+control_dt = 1/20  # agent decision interval, also used as scriptRefreshRate
+
+legs.add_component(MoveToGoal(goal, control_dt))
 # legs.add_component(ServoMovment(servo1))
 
 
-Core.run_max_speed(scene + [legs], tick=1/240, Render=True, scriptRefreshRate=1/20, physics_epochs=200)
+# Rendering is off while training (it only slows it down); use RunInfluence.py to watch the model.
+Core.run_max_speed(scene + [legs], tick=1/240, Render=False, scriptRefreshRate=control_dt, physics_epochs=200)

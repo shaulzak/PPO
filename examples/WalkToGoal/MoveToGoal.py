@@ -1,3 +1,4 @@
+import math
 import random
 
 from bereshit import Vector3
@@ -6,12 +7,15 @@ from bereshit.addons.PPO.essentials import GoalReach
 
 
 class MoveToGoal(Agent):
-    def __init__(self, goal):
+    def __init__(self, goal, control_dt):
         super(MoveToGoal, self).__init__()
         self.success = 0
         self.episodes = 0
         self.speed = 120
         self.goal = goal
+        # Time between Update() calls (the scriptRefreshRate passed to Core.run).
+        # The engine passes the physics tick as dt, which is much shorter.
+        self.control_dt = control_dt
 
     def attach(self, parent):
         self.bodyParts = parent.get_all_children_physics()
@@ -25,9 +29,10 @@ class MoveToGoal(Agent):
         self.hip = parent.search_by_name("hip_bone")[0]
 
     def get_distance(self):
-        dis1 = (self.hip1.transform.local_position - self.goal.transform.local_position).magnitude()
-        dis2 = (self.hip2.transform.local_position - self.goal.transform.local_position).magnitude()
-        dis3 = (self.hip.transform.local_position - self.goal.transform.local_position).magnitude()
+        # World positions: the two legs have different parents, so local positions are not comparable.
+        dis1 = (self.hip1.transform.position - self.goal.transform.position).magnitude()
+        dis2 = (self.hip2.transform.position - self.goal.transform.position).magnitude()
+        dis3 = (self.hip.transform.position - self.goal.transform.position).magnitude()
         dis = max(dis1,max(dis2, dis3))
 
         return dis
@@ -35,10 +40,12 @@ class MoveToGoal(Agent):
     def OnEpisodeBegin(self):
         self.parent.reset_to_default()
         self.goal.reset_to_default()
-        self.parent.transform.local_position += Vector3(random.uniform(-10, 10), 0, random.uniform(-10, 10))
-        self.parent.transform.local_position = Vector3(0, 0, 0)
-        self.goal.transform.local_position += Vector3(random.uniform(-10, 10), 0, random.uniform(-10, 10))
-        self.goal.transform.local_position = Vector3(-10,14,0)
+        start_offset = Vector3(random.uniform(-10, 10), 0, random.uniform(-10, 10))
+        self.parent.transform.local_position += start_offset
+        # Goal at hip height, 8-12 units from the robot in a random direction.
+        angle = random.uniform(0, 2 * math.pi)
+        distance = random.uniform(8, 12)
+        self.goal.transform.local_position = start_offset + Vector3(math.cos(angle) * distance, 14, math.sin(angle) * distance)
         self.start_dis = self.get_distance()
         self.min_distance = self.start_dis
         self.episodes += 1
@@ -73,10 +80,12 @@ class MoveToGoal(Agent):
             self.end_episode()
 
     def Update(self, dt):
+        if self.process_end_request():
+            return
         self.check()
         self.add_observations()
         actions = self.get_continuous_actions()
-        self.move(actions, dt)
+        self.move(actions, self.control_dt)
         self.addRewardByDistance()
         if self.trainer.learn_if_ready():
             if self.episodes != 0:

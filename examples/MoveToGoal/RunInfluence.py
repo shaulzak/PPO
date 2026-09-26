@@ -22,7 +22,7 @@ config = Config(
     max_steps=50
 )
 Academy.setup_trainer(config)
-Academy.load_model("model.pt")
+Academy.load_trained_model("model.pt")
 
 agent = GameObject().add_component(BoxCollider(), Rigidbody(Freeze_Rotation=Vector3(1,1,1)), MoveToGoal(goal))
 

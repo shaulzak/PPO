@@ -40,7 +40,7 @@ config = Config(
 )
 
 Academy.setup_trainer(config)
-Academy.load_model("model.pt")
+Academy.load_trained_model("model.pt")
 
 warm = GameObject(size=Vector3(), children=[spine1, spine2, spine3, spine4, head]).add_component(MoveToGoal(goal))
 
